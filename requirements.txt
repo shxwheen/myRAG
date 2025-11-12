@@ -7,7 +7,7 @@ numpy>=1.24.0
 tqdm>=4.65.0
 
 # HuggingFace datasets
-datasets>=2.14.0
+datasets>=2.14.0not
 
 # LangChain and vector stores
 langchain>=0.1.0
