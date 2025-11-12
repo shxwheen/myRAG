@@ -15,7 +15,7 @@ TOGETHER_API_KEY=your_together_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-3. Add PDF documents to `data/test_files/finance-bench-pdfs/`
+3. Add PDF documents to `data/test_files/finance-bench-pdfs/` from `https://github.com/patronus-ai/financebench/tree/main/pdfs`
 
 ## Quick Start
 
