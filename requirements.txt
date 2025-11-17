@@ -7,7 +7,7 @@ numpy>=1.24.0
 tqdm>=4.65.0
 
 # HuggingFace datasets
-datasets>=2.14.0not
+datasets>=2.14.0
 
 # LangChain and vector stores
 langchain>=0.1.0
@@ -27,3 +27,11 @@ python-dotenv>=1.0.0
 
 # Document processing
 unstructured>=0.10.0
+unstructured[pdf]>=0.10.0
+
+# Reranking
+sentence-transformers>=2.2.0
+
+# PDF processing dependencies for unstructured
+pytesseract>=0.3.10
+pillow>=10.0.0

@@ -17,7 +17,7 @@ load_dotenv()
 # path to chromadb persistence directory (relative to project root)
 BASE_DIR = Path(__file__).parent.parent
 CHROMA_PATH = str(BASE_DIR / "chroma")
-embeddings = TogetherEmbeddings(model="BAAI/bge-base-en-v1.5") # this is for embedding with TogetherAPI rather than OpenAI
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
 def main():
 

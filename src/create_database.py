@@ -24,7 +24,8 @@ CHROMA_PATH = str(BASE_DIR / "chroma")
 # path to directory containing source documents
 DATA_PATH = str(BASE_DIR / "data/test_files/finance-bench-pdfs")
 
-embeddings = TogetherEmbeddings(model="BAAI/bge-base-en-v1.5")
+# Using OpenAI text-embedding-3-large - proven on FinanceBench, 8K context window
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
 def main():
     # main entry point that orchestrates the data store generation
@@ -82,7 +83,7 @@ def load_documents():
 def split_text(documents: list[Document]):
     # split documents into smaller chunks with overlap for better context preservation
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,  # maximum characters per chunk (increased for better context)
+        chunk_size=1000,  # maximum characters per chunk
         chunk_overlap=200,  # characters to overlap between chunks
         length_function=len,  # function to measure text length
         add_start_index=True,  # add start index to metadata for tracking position in source

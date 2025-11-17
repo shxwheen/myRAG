@@ -30,9 +30,7 @@ htmlcov/
 
 # Project-specific
 chroma/
-bulk_runs/
 .claude/
-data/test_files/
 
 # Temporary files
 *.log

@@ -15,17 +15,21 @@ class FinanceBenchAdapter(BaseDatasetAdapter):
     - Includes gold answers and evidence from source documents
     """
 
-    def __init__(self, split: str = "train"):
+    def __init__(self, split: str = "train", subset_csv: Optional[str] = None):
         """Initialize FinanceBench adapter.
 
         Args:
             split: Dataset split to load (default: 'train')
+            subset_csv: Optional path to CSV with subset of questions to test
         """
         self.split = split
         self.dataset_id = "PatronusAI/financebench"
+        self.subset_csv = subset_csv
 
     def load_dataset(self) -> pd.DataFrame:
         """Load FinanceBench dataset from HuggingFace.
+
+        If subset_csv is provided, loads the subset instead of full dataset.
 
         Returns:
             pd.DataFrame: Dataset with all columns
@@ -34,6 +38,14 @@ class FinanceBenchAdapter(BaseDatasetAdapter):
             Exception: If dataset fails to load
         """
         try:
+            # If subset CSV provided, load from file
+            if self.subset_csv:
+                print(f"Loading subset questions from {self.subset_csv}...")
+                df = pd.read_csv(self.subset_csv)
+                print(f"Successfully loaded {len(df)} questions from subset")
+                return df
+
+            # Otherwise, load full dataset from HuggingFace
             print(f"Loading {self.dataset_id} dataset from HuggingFace...")
             dataset = load_dataset(self.dataset_id, split=self.split)
             df = dataset.to_pandas()

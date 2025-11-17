@@ -43,10 +43,13 @@ class BulkTestConfig:
 
     # Model settings
     model_name: str = "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
-    embedding_model: str = "BAAI/bge-base-en-v1.5"
+    embedding_model: str = "text-embedding-3-large"
 
     # Retrieval settings
     top_k_retrieval: int = 5
+    use_hybrid_search: bool = True  # BM25 + Semantic
+    use_metadata_filtering: bool = True  # Filter by company/year
+    use_reranking: bool = True  # Cross-encoder reranking
 
     # Generation settings
     temperature: float = 0.0
@@ -126,7 +129,8 @@ class BulkTestRunner:
 
             # Initialize embeddings
             print(f"  Loading embeddings model: {self.config.embedding_model}")
-            self.embeddings = TogetherEmbeddings(model=self.config.embedding_model)
+            from langchain_openai import OpenAIEmbeddings
+            self.embeddings = OpenAIEmbeddings(model=self.config.embedding_model)
 
             # Load ChromaDB
             print(f"  Loading ChromaDB from: {self.config.chroma_path}")
@@ -135,11 +139,39 @@ class BulkTestRunner:
                 embedding_function=self.embeddings
             )
 
-            # Create retriever with top_k
-            print(f"  Creating retriever (top_k={self.config.top_k_retrieval})")
-            self.retriever = db.as_retriever(
-                search_kwargs={"k": self.config.top_k_retrieval}
-            )
+            # Create retriever based on config
+            if self.config.use_hybrid_search:
+                print(f"  Creating HYBRID retriever (BM25 + Semantic, top_k={self.config.top_k_retrieval})")
+
+                # Get all documents for BM25
+                all_docs = db.get()
+                from langchain_core.documents import Document
+                documents = [
+                    Document(page_content=text, metadata=meta)
+                    for text, meta in zip(all_docs['documents'], all_docs['metadatas'])
+                ]
+
+                # Create BM25 retriever
+                from langchain.retrievers import BM25Retriever
+                bm25_retriever = BM25Retriever.from_documents(documents)
+                bm25_retriever.k = self.config.top_k_retrieval
+
+                # Create semantic retriever
+                semantic_retriever = db.as_retriever(
+                    search_kwargs={"k": self.config.top_k_retrieval}
+                )
+
+                # Combine with ensemble (50% weight each)
+                from langchain.retrievers import EnsembleRetriever
+                self.retriever = EnsembleRetriever(
+                    retrievers=[bm25_retriever, semantic_retriever],
+                    weights=[0.5, 0.5]
+                )
+            else:
+                print(f"  Creating SEMANTIC-ONLY retriever (top_k={self.config.top_k_retrieval})")
+                self.retriever = db.as_retriever(
+                    search_kwargs={"k": self.config.top_k_retrieval}
+                )
 
             # Initialize LLM client (Together API via OpenAI SDK)
             print(f"  Initializing LLM client: {self.config.model_name}")
@@ -179,9 +211,61 @@ class BulkTestRunner:
         }
 
         try:
-            # Retrieval phase
+            # Retrieval phase with optional enhancements
             retrieval_start = time.time()
+
+            # Retrieve MORE chunks if using filtering/reranking (so we have candidates after filtering)
+            retrieval_multiplier = 3 if (self.config.use_metadata_filtering or self.config.use_reranking) else 1
+            initial_k = self.config.top_k_retrieval * retrieval_multiplier
+
+            # Update retriever k values dynamically based on whether we need more chunks
+            if self.config.use_hybrid_search:
+                # Update both BM25 and semantic retrievers in the ensemble
+                self.retriever.retrievers[0].k = initial_k  # BM25
+                self.retriever.retrievers[1].search_kwargs["k"] = initial_k  # Semantic
+            else:
+                # Update semantic-only retriever
+                self.retriever.search_kwargs["k"] = initial_k
+
+            # Retrieve chunks
             docs = self.retriever.invoke(question)
+
+            # Apply metadata filtering if enabled
+            if self.config.use_metadata_filtering:
+                from src.metadata_utils import extract_metadata_from_question, filter_chunks_by_metadata
+                question_metadata = extract_metadata_from_question(question)
+                filtered_docs = filter_chunks_by_metadata(docs, question_metadata)
+
+                # If we extracted metadata (years/companies), ALWAYS use filtered results
+                # Better to have few correct chunks than many contaminated ones
+                if question_metadata['years'] or question_metadata['companies']:
+                    if filtered_docs:
+                        docs = filtered_docs  # Use filtered results, even if only 1-2 chunks
+                    else:
+                        # Metadata was extracted but nothing matched - this is a real "no answer" scenario
+                        docs = []
+                # If no metadata in question, skip filtering (e.g., "What is the revenue?" with no year/company)
+
+            # Apply reranking if enabled and we have more than needed
+            if self.config.use_reranking and len(docs) > 0:
+                from sentence_transformers import CrossEncoder
+                # Use a cross-encoder model for reranking
+                if not hasattr(self, 'reranker'):
+                    print("  Loading cross-encoder for reranking...")
+                    self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+
+                # Score each doc against the question
+                pairs = [[question, doc.page_content] for doc in docs]
+                scores = self.reranker.predict(pairs)
+
+                # Sort by score and take top k
+                scored_docs = list(zip(docs, scores))
+                scored_docs.sort(key=lambda x: x[1], reverse=True)
+                docs = [doc for doc, score in scored_docs[:self.config.top_k_retrieval]]
+            else:
+                # No reranking - just take top k
+                docs = docs[:self.config.top_k_retrieval]
+
             retrieval_time = (time.time() - retrieval_start) * 1000  # Convert to ms
 
             result['retrieval_time_ms'] = retrieval_time
@@ -216,7 +300,11 @@ IMPORTANT INSTRUCTIONS:
 - If the context contains the answer, provide it concisely and accurately
 - If the context does NOT contain sufficient information, state: "The provided context does not contain sufficient information to answer this question."
 - Pay close attention to fiscal years and time periods mentioned in both the question and context
-- For numerical questions, include units (e.g., millions, billions, percentage)
+- For numerical questions requiring a specific number, percentage, or ratio as the answer:
+  * Provide ONLY the numerical value with appropriate units
+  * Format examples: "$1,577 million" or "65.4%" or "24.26"
+  * Do NOT add explanatory sentences like "The answer is..." or "According to the context..."
+- For non-numerical or explanatory questions, provide full context and reasoning
 
 Context:
 {context}
@@ -466,6 +554,12 @@ def main():
         default=512,
         help='Max tokens for generation (default: 512)'
     )
+    parser.add_argument(
+        '--subset',
+        type=str,
+        default=None,
+        help='Path to subset questions CSV (optional, filters to subset of questions)'
+    )
 
     args = parser.parse_args()
 
@@ -480,7 +574,7 @@ def main():
 
     # Select dataset adapter
     if args.dataset.lower() == 'financebench':
-        adapter = FinanceBenchAdapter()
+        adapter = FinanceBenchAdapter(subset_csv=args.subset)
     else:
         print(f"ERROR: Unknown dataset '{args.dataset}'")
         print("Available datasets: financebench")
