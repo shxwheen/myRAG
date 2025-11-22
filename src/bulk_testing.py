@@ -288,23 +288,23 @@ class BulkTestRunner:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a precise financial analysis assistant. Answer questions using ONLY the information provided in the context. Be accurate with numbers, dates, and company names. If the context doesn't contain the information needed to answer the question, explicitly state that."
+                        "content": "You are a precise financial analysis assistant. Answer questions using the information provided in the context. Be accurate with numbers, dates, and company names. ALWAYS provide your best answer based on the available context - never refuse to answer or say you cannot find the information."
                     },
                     {
                         "role": "user",
-                        "content": f"""Answer the following question using ONLY the information from the provided context.
+                        "content": f"""Answer the following question using the information from the provided context.
 
 IMPORTANT INSTRUCTIONS:
-- Use precise numbers, dates, and company names from the context
+- ALWAYS provide an answer - even if the context seems incomplete, give your best hypothesis based on available information
+- Use precise numbers, dates, and company names from the context when available
 - Do NOT use information from other companies or fiscal years unless explicitly asked
-- If the context contains the answer, provide it concisely and accurately
-- If the context does NOT contain sufficient information, state: "The provided context does not contain sufficient information to answer this question."
 - Pay close attention to fiscal years and time periods mentioned in both the question and context
 - For numerical questions requiring a specific number, percentage, or ratio as the answer:
   * Provide ONLY the numerical value with appropriate units
   * Format examples: "$1,577 million" or "65.4%" or "24.26"
   * Do NOT add explanatory sentences like "The answer is..." or "According to the context..."
 - For non-numerical or explanatory questions, provide full context and reasoning
+- NEVER say "The provided context does not contain sufficient information" - always attempt an answer
 
 Context:
 {context}
